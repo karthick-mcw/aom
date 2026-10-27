@@ -31,17 +31,25 @@ void av1_cost_tokens_from_cdf(int *costs, const aom_cdf_prob *cdf,
                               const int *inv_map) {
   int i;
   aom_cdf_prob prev_cdf = 0;
-  for (i = 0;; ++i) {
-    aom_cdf_prob p15 = AOM_ICDF(cdf[i]) - prev_cdf;
-    p15 = (p15 < EC_MIN_PROB) ? EC_MIN_PROB : p15;
-    prev_cdf = AOM_ICDF(cdf[i]);
-
-    if (inv_map)
+  // inv_map is loop-invariant: hoist the test out of the per-symbol loop into
+  // two specialized loops that differ only in the store target.
+  if (inv_map) {
+    for (i = 0;; ++i) {
+      aom_cdf_prob p15 = AOM_ICDF(cdf[i]) - prev_cdf;
+      p15 = (p15 < EC_MIN_PROB) ? EC_MIN_PROB : p15;
+      prev_cdf = AOM_ICDF(cdf[i]);
       costs[inv_map[i]] = av1_cost_symbol(p15);
-    else
+      // Stop once we reach the end of the CDF
+      if (cdf[i] == AOM_ICDF(CDF_PROB_TOP)) break;
+    }
+  } else {
+    for (i = 0;; ++i) {
+      aom_cdf_prob p15 = AOM_ICDF(cdf[i]) - prev_cdf;
+      p15 = (p15 < EC_MIN_PROB) ? EC_MIN_PROB : p15;
+      prev_cdf = AOM_ICDF(cdf[i]);
       costs[i] = av1_cost_symbol(p15);
-
-    // Stop once we reach the end of the CDF
-    if (cdf[i] == AOM_ICDF(CDF_PROB_TOP)) break;
+      // Stop once we reach the end of the CDF
+      if (cdf[i] == AOM_ICDF(CDF_PROB_TOP)) break;
+    }
   }
 }
