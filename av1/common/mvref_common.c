@@ -947,41 +947,37 @@ static int motion_field_projection(AV1_COMMON *cm,
   }
 
   if (dir == 2) start_to_current_frame_offset = -start_to_current_frame_offset;
+  if (abs(start_to_current_frame_offset) > MAX_FRAME_DISTANCE) return 0;
 
   MV_REF *mv_ref_base = start_frame_buf->mvs;
   const int mvs_rows = (cm->mi_params.mi_rows + 1) >> 1;
   const int mvs_cols = (cm->mi_params.mi_cols + 1) >> 1;
+  const int tpl_stride = cm->mi_params.mi_stride >> 1;
 
   for (int blk_row = 0; blk_row < mvs_rows; ++blk_row) {
-    for (int blk_col = 0; blk_col < mvs_cols; ++blk_col) {
-      MV_REF *mv_ref = &mv_ref_base[blk_row * mvs_cols + blk_col];
-      MV fwd_mv = mv_ref->mv.as_mv;
+    MV_REF *mv_ref = mv_ref_base + blk_row * mvs_cols;
+    for (int blk_col = 0; blk_col < mvs_cols; ++blk_col, ++mv_ref) {
+      if (mv_ref->ref_frame <= INTRA_FRAME) continue;
 
-      if (mv_ref->ref_frame > INTRA_FRAME) {
-        int_mv this_mv;
-        int mi_r, mi_c;
-        const int ref_frame_offset = ref_offset[mv_ref->ref_frame];
+      const int ref_frame_offset = ref_offset[mv_ref->ref_frame];
+      if (ref_frame_offset <= 0 ||
+          abs(ref_frame_offset) > MAX_FRAME_DISTANCE) {
+        continue;
+      }
 
-        int pos_valid =
-            abs(ref_frame_offset) <= MAX_FRAME_DISTANCE &&
-            ref_frame_offset > 0 &&
-            abs(start_to_current_frame_offset) <= MAX_FRAME_DISTANCE;
+      int_mv this_mv;
+      int mi_r, mi_c;
+      const MV fwd_mv = mv_ref->mv.as_mv;
 
-        if (pos_valid) {
-          av1_get_mv_projection(&this_mv.as_mv, fwd_mv,
-                                start_to_current_frame_offset,
-                                ref_frame_offset);
-          pos_valid = get_block_position(cm, &mi_r, &mi_c, blk_row, blk_col,
-                                         this_mv.as_mv, dir >> 1);
-        }
+      av1_get_mv_projection(&this_mv.as_mv, fwd_mv,
+                            start_to_current_frame_offset, ref_frame_offset);
+      if (get_block_position(cm, &mi_r, &mi_c, blk_row, blk_col, this_mv.as_mv,
+                             dir >> 1)) {
+        const int mi_offset = mi_r * tpl_stride + mi_c;
 
-        if (pos_valid) {
-          const int mi_offset = mi_r * (cm->mi_params.mi_stride >> 1) + mi_c;
-
-          tpl_mvs_base[mi_offset].mfmv0.as_mv.row = fwd_mv.row;
-          tpl_mvs_base[mi_offset].mfmv0.as_mv.col = fwd_mv.col;
-          tpl_mvs_base[mi_offset].ref_frame_offset = ref_frame_offset;
-        }
+        tpl_mvs_base[mi_offset].mfmv0.as_mv.row = fwd_mv.row;
+        tpl_mvs_base[mi_offset].mfmv0.as_mv.col = fwd_mv.col;
+        tpl_mvs_base[mi_offset].ref_frame_offset = ref_frame_offset;
       }
     }
   }
